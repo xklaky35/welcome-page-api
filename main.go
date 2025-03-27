@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"time"
 
-
 	_ "time/tzdata"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +16,11 @@ import (
 	"github.com/xklaky35/wpFileReader"
 )
 
+
 const TIME_FORMAT string = time.RFC3339
+const LOG_PATH string = "/welcome-page-api/welcomePage.log"
+const DATA_PATH string = "/welcome-page-api/data.json"
+const CONFIG_PATH string = "/welcome-page-api/config.json"
 
 var config filereader.Config
 type gauge struct {
@@ -38,12 +41,12 @@ func Init(r *gin.RouterGroup) error {
 		return err
 	}
 
-	config, err = filereader.LoadConfig()
+	config, err = filereader.LoadConfig(CONFIG_PATH)
 	if err != nil {
 		return err
 	}
 
-	f, err := os.OpenFile("/logs/logs.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile(LOG_PATH, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
@@ -60,7 +63,7 @@ func Init(r *gin.RouterGroup) error {
 }
 
 func getData(c *gin.Context){
-	data, err := filereader.LoadData()
+	data, err := filereader.LoadData(DATA_PATH)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -70,7 +73,7 @@ func getData(c *gin.Context){
 }
 
 func update(c *gin.Context){
-	data, err := filereader.LoadData()
+	data, err := filereader.LoadData(DATA_PATH)
 	if err != nil {
 		log.Println(err)
 		return
@@ -96,11 +99,11 @@ func update(c *gin.Context){
 	} else {
 		c.AbortWithStatus(404)		
 	}
-	filereader.WriteData(&data)
+	filereader.WriteData(&data, DATA_PATH)
 }
 
 func addGauge(c *gin.Context){
-	data, err := filereader.LoadData()
+	data, err := filereader.LoadData(DATA_PATH)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -135,11 +138,11 @@ func addGauge(c *gin.Context){
 		})
 	}
 
-	filereader.WriteData(&data)
+	filereader.WriteData(&data, DATA_PATH)
 }
 
 func removeGauge(c *gin.Context){
-	data, err := filereader.LoadData()
+	data, err := filereader.LoadData(DATA_PATH)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -163,12 +166,12 @@ func removeGauge(c *gin.Context){
 	} else {
 		c.AbortWithStatus(404)		
 	}
-	filereader.WriteData(&data)
+	filereader.WriteData(&data, DATA_PATH)
 }
 
 
 func dailyCycle(c *gin.Context){
-	data, err := filereader.LoadData()
+	data, err := filereader.LoadData(DATA_PATH)
 	if err != nil {
 		log.Print()
 	}
@@ -182,7 +185,7 @@ func dailyCycle(c *gin.Context){
 			data.Gauges[i].Value = 0
 		}
 	}
-	filereader.WriteData(&data)
+	filereader.WriteData(&data, DATA_PATH)
 }
 
 func findGauge(g []filereader.Gauge, name string) (int,bool){
@@ -229,4 +232,3 @@ func isToday(date string) bool{
 	}
 	return true
 }
-
