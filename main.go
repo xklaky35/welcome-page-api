@@ -32,7 +32,7 @@ func (gauge *gauge) Validate() bool {
 	}
 	return true
 }
-func initData() error {
+func Init(r *gin.RouterGroup) error {
 	err := godotenv.Load()
 	if err != nil {
 		return err
@@ -48,6 +48,13 @@ func initData() error {
 		log.Fatalf("error opening file: %v", err)
 	}
 	log.SetOutput(f)
+
+
+	r.GET("/GetData", getData)
+	r.POST("/UpdateGauge", update) //param
+	r.POST("/AddGauge", addGauge) //body
+	r.POST("/RemoveGauge", removeGauge) //body
+	r.POST("/DailyCycle", dailyCycle)
 
 	return nil
 }
