@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"time"
 
-	_ "time/tzdata"
+	_"time/tzdata"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -221,10 +221,12 @@ func isToday(date string) bool{
 	t, err := time.Parse(TIME_FORMAT,date)		
 	if err != nil {
 		log.Print(err)	
+		return false
 	}
 	loc, err := time.LoadLocation(config.Timezone)
 	if err != nil {
 		log.Print(err)
+		return false
 	}
 
 	if t.Day() != time.Now().In(loc).Day(){

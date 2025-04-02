@@ -5,7 +5,7 @@ go 1.24.1
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/joho/godotenv v1.5.1
-	github.com/xklaky35/wpFileReader v0.0.0-00010101000000-000000000000
+	github.com/xklaky35/wpFileReader v0.0.1
 )
 
 require (
@@ -36,5 +36,3 @@ require (
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/xklaky35/wpFileReader => ../wpFileReader/
