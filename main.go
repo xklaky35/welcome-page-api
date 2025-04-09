@@ -1,15 +1,14 @@
-package main 
+package main
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"time"
-	_"time/tzdata"
-	"encoding/json"
+	_ "time/tzdata"
 
 	"github.com/xklaky35/welcome-page-api/db"
 
@@ -22,19 +21,11 @@ const LOG_PATH string = "./local/logs.log"
 const DATA_PATH string = ""
 const CONFIG_PATH string = "./local/config.json"
 
+// the request needs to bind to a datastructure
+// easier this way
 type gauge struct {
 	Name string `form:"name" json:"name"`
 }
-
-type Config struct {
-	MaxValue int `json:"max_value"`
-	MinValue int `json:"min_value"`
-	IncreaseStep int `json:"increase_step"`
-	DecreaseStep int `json:"decrease_step"`
-	Timezone string `json:"timezone"`
-}
-var conf Config
-
 func (gauge *gauge) Validate() bool {
 	regex := `[^a-zA-Z]+`
 	re := regexp.MustCompile(regex)
@@ -45,18 +36,30 @@ func (gauge *gauge) Validate() bool {
 }
 
 
+type Config struct {
+	MaxValue int `json:"max_value"`
+	MinValue int `json:"min_value"`
+	IncreaseStep int `json:"increase_step"`
+	DecreaseStep int `json:"decrease_step"`
+	Timezone string `json:"timezone"`
+}
+var conf Config
+
+
+
 func main() {
 	r := gin.Default()
 	
-//	if !Init() {
-//		return
-//	}
+	if !Init() {
+		fmt.Println("Init error")
+		return
+	}
 
-//	r.GET("/GetData", getData)
-//	r.POST("/UpdateGauge", update) //param
+	r.GET("/GetData", getData)
+	r.POST("/UpdateGauge", update) //param
 	r.POST("/AddGauge", addGauge) //body
-//	r.POST("/RemoveGauge", removeGauge) //body
-//	r.POST("/DailyCycle", dailyCycle)
+	r.POST("/RemoveGauge", removeGauge) //body
+	r.POST("/DailyCycle", dailyCycle)
 
 	db.Init()
 
@@ -64,6 +67,7 @@ func main() {
 }
 
 func Init() bool {
+
 	var err error
 	conf, err = loadConfig()
 	if err != nil {
@@ -81,69 +85,71 @@ func Init() bool {
 }
 
 func getData(c *gin.Context){
-	data, err := db.LoadData(DATA_PATH)
+	data, err := db.LoadData()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-
 	c.JSON(200, &data)
 }
 
 func update(c *gin.Context){
-	data, err := db.LoadData(DATA_PATH)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	var reqGauge gauge
-	if err := c.ShouldBindQuery(&reqGauge); err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-
-	if !reqGauge.Validate(){
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-
-	// search for the gauge and increase it if found
-	if i, exists := findGauge(data.Gauges, reqGauge.Name); exists == true{
-		err := increase(&data.Gauges[i])
-		if err != nil {
-			c.AbortWithStatus(401)
-		}
-	} else {
-		c.AbortWithStatus(404)		
-	}
-	db.WriteData(&data, DATA_PATH)
-}
-
-func addGauge(c *gin.Context){
 	loc, err := time.LoadLocation(conf.Timezone)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
+	// request validation
+	var reqGauge gauge
+	if err := c.ShouldBindQuery(&reqGauge); err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	if !reqGauge.Validate(){
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	gauge := db.GetGauge(reqGauge.Name)
+	if (db.Gauge{}) == gauge {
+		c.AbortWithStatus(http.StatusNotFound)	
+		return
+	}
+	//if isToday(gauge.LastIncrease) {
+		//c.AbortWithStatus(http.StatusForbidden)
+		//return
+	//}
+
+	err = db.UpdateGauge(reqGauge.Name, time.Now().In(loc).Format(TIME_FORMAT), conf.IncreaseStep, conf.MinValue, conf.MaxValue)
+	if err != nil {
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	}
+}
+
+func addGauge(c *gin.Context){
+	// check abort requirements
 	var reqGauge gauge
 	if err := c.ShouldBind(&reqGauge); err != nil {
 		fmt.Println(err)
 		c.AbortWithStatus(http.StatusBadRequest)
-		return
+		return 
 	}
-
 	if !reqGauge.Validate(){
-		fmt.Println("val err")
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	if db.GetGauge(reqGauge.Name) != (db.Gauge{}) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 
-	err = db.AddGauge(db.Gauge{
+	// execute logic
+	err := db.AddGauge(db.Gauge{
 		Name: reqGauge.Name,
 		Value: 0,
-		LastIncrease: time.Now().In(loc).Format(TIME_FORMAT),
+		LastIncrease: "",
 	})
 	if err != nil{
 		fmt.Println(err)
@@ -151,79 +157,38 @@ func addGauge(c *gin.Context){
 }
 
 func removeGauge(c *gin.Context){
-	data, err := db.LoadData(DATA_PATH)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	var reqGauge gauge
 	if err := c.ShouldBind(&reqGauge); err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-
 	if !reqGauge.Validate(){
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-
-	if i, exists := findGauge(data.Gauges, reqGauge.Name); exists == true{
-		copy(data.Gauges[i:], data.Gauges[i+1:])
-		data.Gauges[len(data.Gauges)-1] = db.Gauge{}
-		data.Gauges = data.Gauges[:len(data.Gauges)-1]
-	} else {
-		c.AbortWithStatus(404)		
+	if db.GetGauge(reqGauge.Name) == (db.Gauge{}) {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
 	}
-	db.WriteData(&data, DATA_PATH)
+	err := db.RemoveGauge(reqGauge.Name)
+	if err != nil {
+		return 
+	}
 }
 
 
 func dailyCycle(c *gin.Context){
-	data, err := db.LoadData(DATA_PATH)
+	data, err := db.LoadData()
 	if err != nil {
 		log.Print()
 	}
 
-	for i, e := range data.Gauges {
-		if isToday(e.LastIncrease) {
-			continue
-		}
-		data.Gauges[i].Value -= conf.DecreaseStep
-		if data.Gauges[i].Value < 0 {
-			data.Gauges[i].Value = 0
-		}
+	for _, e := range data.Gauges {
+//		if isToday(e.LastIncrease) {
+			//continue
+		//}
+		db.UpdateGauge(e.Name, e.LastIncrease, -conf.DecreaseStep, conf.MinValue, conf.MaxValue)
 	}
-	db.WriteData(&data, DATA_PATH)
-}
-
-func findGauge(g []db.Gauge, name string) (int,bool){
-	for i, e := range g {
-		if e.Name == name {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-func increase(g *db.Gauge) error {
-	loc, err := time.LoadLocation(conf.Timezone)
-	if err != nil {
-		return err
-	}
-
-
-	if isToday(g.LastIncrease){
-		return errors.New("Forbidden")
-	}
-
-	g.LastIncrease = time.Now().In(loc).Format(TIME_FORMAT)
-
-	if g.Value == conf.MaxValue{
-		return nil
-	}
-	g.Value += conf.IncreaseStep 
-	return nil
 }
 
 func isToday(date string) bool{
