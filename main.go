@@ -129,17 +129,22 @@ func update(c *gin.Context){
 }
 
 func addGauge(c *gin.Context){
+
+	//-------------------------
 	// check abort requirements
+	// request valid?
 	var reqGauge gauge
 	if err := c.ShouldBind(&reqGauge); err != nil {
 		fmt.Println(err)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return 
 	}
+	// name valid?
 	if !reqGauge.Validate(){
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	// already exists?
 	if db.GetGauge(reqGauge.Name) != (db.Gauge{}) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
@@ -187,7 +192,10 @@ func dailyCycle(c *gin.Context){
 //		if isToday(e.LastIncrease) {
 			//continue
 		//}
-		db.UpdateGauge(e.Name, e.LastIncrease, -conf.DecreaseStep, conf.MinValue, conf.MaxValue)
+		err := db.UpdateGauge(e.Name, e.LastIncrease, -conf.DecreaseStep, conf.MinValue, conf.MaxValue)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 

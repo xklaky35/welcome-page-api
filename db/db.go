@@ -30,6 +30,8 @@ func Init() {
 
 
 func AddGauge(gauge Gauge) error{
+	var gauge_id int
+
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil{
 		fmt.Println(err)
@@ -37,23 +39,24 @@ func AddGauge(gauge Gauge) error{
 	}
 	defer db.Close()
 
-	
 	trans, err := db.Begin()
-	_, err = trans.Exec(fmt.Sprintf("INSERT INTO gauges (name) VALUES ('%s');", gauge.Name))
+
+	queryAddGauge := fmt.Sprintf("INSERT INTO gauges (name) VALUES ('%s');", gauge.Name)
+	_, err = trans.Exec(queryAddGauge)
 	if err != nil{
 		trans.Rollback()
 		return err
 	}
 
-	// we need the id of the gauge first before we can add the data to the database
-	var gauge_id int
-	err = trans.QueryRow(fmt.Sprintf("SELECT id FROM gauges WHERE name='%s';", gauge.Name)).Scan(&gauge_id)
+	queryId := fmt.Sprintf("SELECT id FROM gauges WHERE name='%s';", gauge.Name)
+	err = trans.QueryRow(queryId).Scan(&gauge_id)
 	if err != nil{
 		trans.Rollback()
 		return err
 	}
 
-	_, err = trans.Exec(fmt.Sprintf("INSERT INTO data (value, timestamp, gauge_id) VALUES(%d, '%s', %d);", gauge.Value, gauge.LastIncrease, gauge_id))
+	queryInsertData := fmt.Sprintf("INSERT INTO data (value, timestamp, gauge_id) VALUES(%d, '%s', %d);", gauge.Value, gauge.LastIncrease, gauge_id)
+	_, err = trans.Exec(queryInsertData)
 	if err != nil{
 		trans.Rollback()
 		return err
@@ -74,22 +77,21 @@ func LoadData() (Data, error){
 	}
 	defer db.Close()
 
-	// query not finished yet
-	// i need a way to get the updated value after a daily cicle. The timestamp does not change on this event
-	rows, err := db.Query("SELECT name, value, MAX(timestamp), gauge_id FROM gauges g JOIN data d ON g.id = d.gauge_id GROUP BY name;")
+
+	rows, err := db.Query("SELECT MAX(d.id), g.name, d.value, d.timestamp, d.gauge_id FROM gauges g JOIN data d ON g.id = d.gauge_id GROUP BY name;")
 	if err != nil {
 		return data, err
 	}
 
-	var gName, gTimestamp string
-	var gValue,gId int
+	var gName, dTimestamp string
+	var dValue,dId, gId int
 
 	for rows.Next() {
-		rows.Scan(&gName, &gValue, &gTimestamp, &gId)
+		rows.Scan(&dId, &gName, &dValue, &dTimestamp, &gId)
 		data.Gauges = append(data.Gauges, Gauge{
 			Name: gName,
-			Value: gValue,
-			LastIncrease: gTimestamp,
+			Value: dValue,
+			LastIncrease: dTimestamp,
 			GaugeId: gId,
 		})
 	}
@@ -156,11 +158,21 @@ func RemoveGauge(name string) error {
 	if err != nil {
 		return errors.New("Failed to start transaction!")
 	}
+
 	delGauges := fmt.Sprintf("DELETE FROM gauges WHERE name = '%s'", name)
 	delData := fmt.Sprintf("DELETE FROM data WHERE gauge_id = '%d'", gauge.GaugeId)
 
-	tran.Exec(delGauges)
-	tran.Exec(delData)
+	_, err = tran.Exec(delGauges)
+	if err != nil {
+		tran.Rollback()
+		return err
+	}
+
+	_, err = tran.Exec(delData)
+	if err != nil {
+		tran.Rollback()
+		return err
+	}
 
 	err = tran.Commit()
 	if err != nil {
