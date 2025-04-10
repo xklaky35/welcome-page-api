@@ -18,7 +18,6 @@ import (
 
 const TIME_FORMAT string = time.RFC3339
 const LOG_PATH string = "./local/logs.log"
-const DATA_PATH string = ""
 const CONFIG_PATH string = "./local/config.json"
 
 // the request needs to bind to a datastructure
