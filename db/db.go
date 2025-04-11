@@ -11,13 +11,13 @@ import (
 const DB_PATH string = "./data/db"
 
 type Data struct {
-	Gauges []Gauge
+	Gauges []Gauge `json:"gauges"`
 }
 
 type Gauge struct {
-	Name string 
-	Value int 
-	LastIncrease string 
+	Name string `json:"name"`
+	Value int `json:"value"`
+	LastIncrease string `json:"last_increase"`
 	GaugeId int
 }
 
