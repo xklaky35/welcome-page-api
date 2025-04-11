@@ -23,7 +23,7 @@ const CONFIG_PATH string = "./local/config.json"
 // the request needs to bind to a datastructure
 // easier this way
 type gauge struct {
-	Name string `form:"name" json:"name"`
+	Name string `form:"name" binding:"required"`
 }
 func (gauge *gauge) Validate() bool {
 	regex := `[^a-zA-Z]+`
@@ -42,9 +42,8 @@ type Config struct {
 	DecreaseStep int `json:"decrease_step"`
 	Timezone string `json:"timezone"`
 }
+
 var conf Config
-
-
 
 func main() {
 	r := gin.Default()
@@ -60,34 +59,67 @@ func main() {
 	r.POST("/RemoveGauge", removeGauge) //body
 	r.POST("/DailyCycle", dailyCycle)
 
-	db.Init()
 
 	r.Run(":3001")
 }
 
 func Init() bool {
 
-	var err error
-	conf, err = loadConfig()
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
-		return false
-	}
-
+	// setup logging
 	f, err := os.OpenFile(LOG_PATH, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		fmt.Println(err)
 		return false
 	}
+	defer f.Close()
 	log.SetOutput(f)
+
+
+	// setup configuration
+	conf, err = loadConfig()
+	if err != nil {
+		fmt.Printf("Creating default configuration file...\n")
+
+		// load default config
+		conf = Config{
+			MaxValue: 10,
+			MinValue: 0,
+			IncreaseStep: 1,
+			DecreaseStep: 2,
+			Timezone: "Europe/Berlin",
+		}
+		data, _ := json.Marshal(&conf)
+		os.WriteFile(CONFIG_PATH, data, 0666)
+	}
+
+	// setup db
+	fmt.Println("Loading DB driver...")
+	db.LoadDriver()
+
+	fmt.Println("Checking DB file...")
+	f, err = os.OpenFile(db.DB_PATH, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+	defer f.Close()
+
+	fmt.Println("Checking DB schema...")
+	exists, err := db.CreateSchema()
+	if err != nil {
+		return false
+	}
+	if !exists {
+		fmt.Println("Creating new schema...")
+	}
 	return true
 }
 
 func getData(c *gin.Context){
 	data, err := db.LoadData()
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Println(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 	}
 	c.JSON(200, &data)
 }
@@ -95,25 +127,22 @@ func getData(c *gin.Context){
 func update(c *gin.Context){
 	loc, err := time.LoadLocation(conf.Timezone)
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Println(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 	}
 
 	// request validation
 	var reqGauge gauge
 	if err := c.ShouldBindQuery(&reqGauge); err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
-		return
 	}
 	if !reqGauge.Validate(){
 		c.AbortWithStatus(http.StatusBadRequest)
-		return
 	}
 
 	gauge := db.GetGauge(reqGauge.Name)
 	if (db.Gauge{}) == gauge {
 		c.AbortWithStatus(http.StatusNotFound)	
-		return
 	}
 	//if isToday(gauge.LastIncrease) {
 		//c.AbortWithStatus(http.StatusForbidden)
@@ -122,8 +151,8 @@ func update(c *gin.Context){
 
 	err = db.UpdateGauge(reqGauge.Name, time.Now().In(loc).Format(TIME_FORMAT), conf.IncreaseStep, conf.MinValue, conf.MaxValue)
 	if err != nil {
+		log.Println(err)
 		c.AbortWithStatus(http.StatusServiceUnavailable)
-		return
 	}
 }
 
@@ -134,7 +163,6 @@ func addGauge(c *gin.Context){
 	// request valid?
 	var reqGauge gauge
 	if err := c.ShouldBind(&reqGauge); err != nil {
-		fmt.Println(err)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return 
 	}
@@ -156,11 +184,12 @@ func addGauge(c *gin.Context){
 		LastIncrease: "",
 	})
 	if err != nil{
-		fmt.Println(err)
+		log.Println(err)
 	}
 }
 
 func removeGauge(c *gin.Context){
+
 	var reqGauge gauge
 	if err := c.ShouldBind(&reqGauge); err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
@@ -176,6 +205,7 @@ func removeGauge(c *gin.Context){
 	}
 	err := db.RemoveGauge(reqGauge.Name)
 	if err != nil {
+		log.Println(err)
 		return 
 	}
 }
@@ -184,7 +214,7 @@ func removeGauge(c *gin.Context){
 func dailyCycle(c *gin.Context){
 	data, err := db.LoadData()
 	if err != nil {
-		log.Print()
+		log.Println(err)
 	}
 
 	for _, e := range data.Gauges {
@@ -193,7 +223,7 @@ func dailyCycle(c *gin.Context){
 		//}
 		err := db.UpdateGauge(e.Name, e.LastIncrease, -conf.DecreaseStep, conf.MinValue, conf.MaxValue)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 		}
 	}
 }
@@ -201,12 +231,12 @@ func dailyCycle(c *gin.Context){
 func isToday(date string) bool{
 	t, err := time.Parse(TIME_FORMAT,date)		
 	if err != nil {
-		log.Print(err)	
+		log.Println(err)	
 		return false
 	}
 	loc, err := time.LoadLocation(conf.Timezone)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 		return false
 	}
 

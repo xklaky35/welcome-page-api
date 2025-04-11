@@ -2,14 +2,13 @@ package db
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/mattn/go-sqlite3"
 )
 
-const DB_PATH string = "./local/db.db"
+const DB_PATH string = "./data/db"
 
 type Data struct {
 	Gauges []Gauge
@@ -22,10 +21,36 @@ type Gauge struct {
 	GaugeId int
 }
 
-func Init() {
+func LoadDriver() {
 	if !slices.Contains(sql.Drivers(), "sqlite3"){
 		sql.Register("sqlite3", &sqlite3.SQLiteDriver{})
 	}
+}
+
+func CreateSchema() (bool, error) {
+	db, err := sql.Open("sqlite3", DB_PATH)
+	if err != nil{
+		return false, err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+	CREATE TABLE gauges (
+		id INTEGER PRIMARY KEY,
+		name varchar(30));
+
+	CREATE TABLE data (
+		id INTEGER PRIMARY KEY,
+		value INTEGER,
+		timestamp DATETIME,
+		gauge_id INTEGER,
+		FOREIGN KEY (gauge_id) REFERENCES gauges(id));`)	
+
+	if err != nil {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 
@@ -34,7 +59,6 @@ func AddGauge(gauge Gauge) error{
 
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil{
-		fmt.Println(err)
 		return err
 	}
 	defer db.Close()
@@ -72,7 +96,6 @@ func LoadData() (Data, error){
 
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil{
-		fmt.Println(err)
 		return data, err
 	}
 	defer db.Close()
@@ -102,7 +125,6 @@ func LoadData() (Data, error){
 func UpdateGauge(name string, timestamp string, increase int, min int, max int ) error {
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	defer db.Close()
@@ -122,7 +144,6 @@ func UpdateGauge(name string, timestamp string, increase int, min int, max int )
 
 	_, err = db.Exec(query)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
@@ -147,7 +168,6 @@ func GetGauge(name string) Gauge {
 func RemoveGauge(name string) error {
 	db, err := sql.Open("sqlite3", DB_PATH)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	defer db.Close()
@@ -156,7 +176,7 @@ func RemoveGauge(name string) error {
 	
 	tran, err := db.Begin()
 	if err != nil {
-		return errors.New("Failed to start transaction!")
+		return err
 	}
 
 	delGauges := fmt.Sprintf("DELETE FROM gauges WHERE name = '%s'", name)

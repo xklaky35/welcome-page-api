@@ -25,7 +25,5 @@ go.work.sum
 .env
 
 
-config.json
-logs.log
-db.db
-
+data/
+local/

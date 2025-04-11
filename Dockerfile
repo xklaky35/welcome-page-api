@@ -13,8 +13,6 @@ RUN go build -o /bin/welcome-page-api /src/
 FROM alpine:latest
 COPY --from=build /bin/welcome-page-api /bin/welcome-page-api 
 
-COPY ./local/* ./local/
-
 ENV PORT=:3001
 EXPOSE 3001
 
