@@ -71,7 +71,6 @@ func Init() bool {
 		fmt.Println(err)
 		return false
 	}
-	defer f.Close()
 	log.SetOutput(f)
 
 
